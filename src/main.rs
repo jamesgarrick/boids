@@ -1,6 +1,10 @@
+use macroquad::prelude::*;
 use std::vec;
 
-use macroquad::prelude::*;
+fn normalize_angle(angle: f32) -> f32 {
+    let pi = std::f32::consts::PI;
+    (angle + pi) % (2.0 * pi) - pi
+}
 
 #[derive(PartialEq)]
 struct Bird {
@@ -56,6 +60,16 @@ async fn main() {
         }
     };
 
+    let avg_heading = |local_birds: &[&Bird]| -> f32 {
+        if local_birds.is_empty() {
+            return 0.0;
+        }
+
+        let total_heading: f32 = local_birds.iter().fold(0.0, |acc, bird| acc + bird.dir);
+
+        total_heading / local_birds.len() as f32
+    };
+
     loop {
         clear_background(BLACK);
         let updates: Vec<_> = birds
@@ -83,6 +97,8 @@ async fn main() {
                 }
 
                 let center = center_of_mass(&local_birds);
+                let avg_h = avg_heading(&local_birds);
+                let steer_alignment = normalize_angle(avg_h - bird.dir);
 
                 // bird -> center
                 let to_center = Vec2 {
@@ -90,19 +106,10 @@ async fn main() {
                     y: center.y - bird.pos.y,
                 };
 
-                // angle -> center
                 let angle_to_center = f32::atan2(to_center.y, to_center.x);
+                let steer_cohesion = normalize_angle(angle_to_center - bird.dir);
 
-                // current heading vs center heading normalize
-                let mut angle_diff = angle_to_center - bird.dir;
-                while angle_diff > std::f32::consts::PI {
-                    angle_diff -= 2.0 * std::f32::consts::PI;
-                }
-                while angle_diff < -std::f32::consts::PI {
-                    angle_diff += 2.0 * std::f32::consts::PI;
-                }
-
-                let new_dir = angle_diff * TURN_RATE;
+                let new_dir = (steer_cohesion * TURN_RATE) + (steer_alignment * 0.5);
 
                 (new_pos, new_dir)
             })
@@ -111,6 +118,20 @@ async fn main() {
         for (bird, (new_pos, new_dir)) in birds.iter_mut().zip(updates) {
             bird.pos = new_pos;
             bird.dir = new_dir;
+
+            // wrap coords to screen bounds
+            if bird.pos.x < 0.0 {
+                bird.pos.x = screen_width()
+            }
+            if bird.pos.x > screen_width() {
+                bird.pos.x = 0.0;
+            }
+            if bird.pos.y < 0.0 {
+                bird.pos.y = screen_height()
+            }
+            if bird.pos.y > screen_height() {
+                bird.pos.y = 0.0;
+            }
         }
 
         for bird in &birds {
